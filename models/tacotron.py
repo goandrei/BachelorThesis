@@ -7,7 +7,7 @@ from layers.tacotron import Prenet, Encoder, Decoder, PostCBHG
 
 class Tacotron(nn.Module):
     def __init__(self,
-                 num_chars,
+                 num_chars=61,
                  embedding_dim=256,
                  linear_dim=1025,
                  mel_dim=80,
