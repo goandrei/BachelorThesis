@@ -46,7 +46,6 @@ class Synthesizer(object):
         print(" | > Model file path: ", model_file)
 
         config = load_config(model_config)
-        self.config = config
         self.use_cuda = use_cuda
         self.use_phonemes = config.use_phonemes
         self.ap = AudioProcessor(**config.audio)
@@ -111,17 +110,17 @@ class Synthesizer(object):
             sen += '.'
             print('Input : {}'.format(sen))
 
-            #character to phonem
-            seq = np.array(phoneme_to_sequence(sen, [self.config.text_cleaner], self.config.phoneme_language))
+            #character => phonem => index
+            seq = np.array(self.input_adapter(sen))
             
-            #phonem to index
+            #numpy to pytorch array
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
 
             if self.use_cuda:
                 chars_var = chars_var.cuda()
 
             #begin the inference
-            mel_out, linear_out, alignments, stop_tokens = self.model.forward(chars_var)
+            mel_out, linear_out, alignments, stop_tokens, t = self.model.forward(chars_var)
 
             #move output tensor to cpu
             linear_out = linear_out[0].data.cpu().numpy()
@@ -131,4 +130,4 @@ class Synthesizer(object):
 
         out = io.BytesIO()
         self.save_wav(wavs, out)
-        return out
+        return out, t

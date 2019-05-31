@@ -14,7 +14,7 @@ class Prenet(nn.Module):
             If it is a list, for each value, there is created a new layer.
     """
 
-    def __init__(self, in_features, out_features=[256, 128]):
+    def __init__(self, in_features, out_features=[256, 128], dropout=0.5):
         super(Prenet, self).__init__()
         in_features = [in_features] + out_features[:-1]
         self.layers = nn.ModuleList([
@@ -22,7 +22,7 @@ class Prenet(nn.Module):
             for (in_size, out_size) in zip(in_features, out_features)
         ])
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(dropout)
         # self.init_layers()
 
     def init_layers(self):
@@ -31,10 +31,11 @@ class Prenet(nn.Module):
                 layer.weight, gain=torch.nn.init.calculate_gain('relu'))
 
     def forward(self, inputs):
+
         for linear in self.layers:
             inputs = self.dropout(self.relu(linear(inputs)))
-        return inputs
 
+        return inputs
 
 class BatchNormConv1d(nn.Module):
     r"""A wrapper for Conv1d with BatchNorm. It sets the activation
@@ -147,14 +148,15 @@ class CBHG(nn.Module):
                  gru_features=128,
                  num_highways=4):
         super(CBHG, self).__init__()
+
         self.in_features = in_features
         self.conv_bank_features = conv_bank_features
         self.highway_features = highway_features
         self.gru_features = gru_features
         self.conv_projections = conv_projections
         self.relu = nn.ReLU()
-        # list of conv1d bank with filter size k=1...K
-        # TODO: try dilational layers instead
+
+        # setup conv1d bank with filter size k=1...K
         self.conv1d_banks = nn.ModuleList([
             BatchNormConv1d(
                 in_features,
@@ -164,14 +166,15 @@ class CBHG(nn.Module):
                 padding=[(k - 1) // 2, k // 2],
                 activation=self.relu) for k in range(1, K + 1)
         ])
-        # max pooling of conv bank, with padding
-        # TODO: try average pooling OR larger kernel size
+
+        # setup MaxPooling; it uses padding which preserves the shape
         self.max_pool1d = nn.Sequential(
             nn.ConstantPad1d([0, 1], value=0),
             nn.MaxPool1d(kernel_size=2, stride=1, padding=0))
         out_features = [K * conv_bank_features] + conv_projections[:-1]
         activations = [self.relu] * (len(conv_projections) - 1)
         activations += [None]
+
         # setup conv1d projection layers
         layer_set = []
         for (in_size, out_size, ac) in zip(out_features, conv_projections,
@@ -185,6 +188,7 @@ class CBHG(nn.Module):
                 activation=ac)
             layer_set.append(layer)
         self.conv1d_projections = nn.ModuleList(layer_set)
+
         # setup Highway layers
         if self.highway_features != conv_projections[-1]:
             self.pre_highway = nn.Linear(
@@ -193,7 +197,8 @@ class CBHG(nn.Module):
             Highway(highway_features, highway_features)
             for _ in range(num_highways)
         ])
-        # bi-directional GPU layer
+
+        # setup bi-directional GRU layer
         self.gru = nn.GRU(
             gru_features,
             gru_features,
@@ -202,39 +207,57 @@ class CBHG(nn.Module):
             bidirectional=True)
 
     def forward(self, inputs):
-        # (B, T_in, in_features)
+
+        # shape : batch_size x time/number_of_phonemes x in_features
         x = inputs
-        # Needed to perform conv1d on time-axis
-        # (B, in_features, T_in)
+
+        # transpose the 2nd and 3rd dimension so we will apply convolutions on the time axis.
         if x.size(-1) == self.in_features:
             x = x.transpose(1, 2)
-        T = x.size(-1)
-        # (B, hid_features*K, T_in)
-        # Concat conv1d bank outputs
+
+        # compute the outputs for each convolution in the bank
+        # shape : batch_size x in_features x time/number_of_phonemes)
         outs = []
         for conv1d in self.conv1d_banks:
             out = conv1d(x)
             outs.append(out)
+        
+        # concatenate the outputs from the convolutional bank
+        # resulting shape : batch_size x K * in_features x time/number_of_phonemes
         x = torch.cat(outs, dim=1)
+
         assert x.size(1) == self.conv_bank_features * len(self.conv1d_banks)
+        
+        # apply the MaxPooling. The shape will stay the same due to [0,1] padding.
         x = self.max_pool1d(x)
+
+        # pass the data to the convolution projection layers
         for conv1d in self.conv1d_projections:
             x = conv1d(x)
-        # (B, T_in, hid_feature)
+
+        # get the data back to the original shape once we passed the data through all the convolutions
+        # resulting shape : batch_size x time/number_of_phonemes x K * in_features
         x = x.transpose(1, 2)
-        # Back to the original shape
+
+        # back to the original shape
         x += inputs
+
+        # if there s a shape mismatch pass the data through a linear layer
         if self.highway_features != self.conv_projections[-1]:
             x = self.pre_highway(x)
-        # Residual connection
-        # TODO: try residual scaling as in Deep Voice 3
-        # TODO: try plain residual layers
+
+        # pass data to the Highway network
+        # shape : batch_size x time/number_of_phonemes x in_features
         for highway in self.highways:
             x = highway(x)
-        # (B, T_in, hid_features*2)
-        # TODO: replace GRU with convolution as in Deep Voice 3
-        self.gru.flatten_parameters()
+        
+        # shape : batch_size x time/number_of_phonemes x in_features
         outputs, _ = self.gru(x)
+
+        # the CBHG's module output
+        # shape : batch_size x time/number_of_phonemes x in_features * 2
+        # we last dimension doubles the use of a bidirectional GRU which iterates over the data 
+        # from both ends
         return outputs
 
 
@@ -242,7 +265,7 @@ class EncoderCBHG(nn.Module):
     def __init__(self):
         super(EncoderCBHG, self).__init__()
         self.cbhg = CBHG(
-            128,
+            in_features=128,
             K=16,
             conv_bank_features=128,
             conv_projections=[128, 128],
@@ -250,8 +273,8 @@ class EncoderCBHG(nn.Module):
             gru_features=128,
             num_highways=4)
 
-    def forward(self, x):
-        return self.cbhg(x)
+    def forward(self, inputs):
+        return self.cbhg(inputs)
 
 
 class Encoder(nn.Module):
@@ -265,13 +288,19 @@ class Encoder(nn.Module):
     def forward(self, inputs):
         r"""
         Args:
-            inputs (FloatTensor): embedding features
-
+            inputs (FloatTensor): input_data
+    
         Shapes:
-            - inputs: batch x time x in_features
-            - outputs: batch x time x 128*2
+            - inputs  : batch_size x time/number_of_phonemes x embedding_dim
+            - outputs : batch_size x time/number_of_phonemes x (embedding_dim / 2) * 2
         """
+
+        #feed data to prenet
+        #shape : batch_size x time/number_of_phonemes x embedding_dim
         inputs = self.prenet(inputs)
+
+        #feed data to the CBHG
+        #shape : batch_Size x time/number_of_phonemes x embedding_dim / 2
         return self.cbhg(inputs)
 
 
@@ -357,21 +386,21 @@ class Decoder(nn.Module):
         """
         Initialization of decoder states
         """
-        B = inputs.size(0)
-        T = inputs.size(1)
+        batch_size = inputs.size(0)
+        time_size = inputs.size(1)
         # go frame as zeros matrix
-        initial_memory = self.memory_init(inputs.data.new_zeros(B).long())
+        initial_memory = self.memory_init(inputs.data.new_zeros(batch_size).long())
 
         # decoder states
-        attention_rnn_hidden = self.attention_rnn_init(inputs.data.new_zeros(B).long())
+        attention_rnn_hidden = self.attention_rnn_init(inputs.data.new_zeros(batch_size).long())
         decoder_rnn_hiddens = [
-            self.decoder_rnn_inits(inputs.data.new_tensor([idx]*B).long())
+            self.decoder_rnn_inits(inputs.data.new_tensor([idx] * batch_size).long())
             for idx in range(len(self.decoder_rnns))
         ]
-        current_context_vec = inputs.data.new(B, self.in_features).zero_()
+        current_context_vec = inputs.data.new(batch_size, self.in_features).zero_()
         # attention states
-        attention = inputs.data.new(B, T).zero_()
-        attention_cum = inputs.data.new(B, T).zero_()
+        attention = inputs.data.new(batch_size, time_size).zero_()
+        attention_cum = inputs.data.new(batch_size, time_size).zero_()
         return (initial_memory, attention_rnn_hidden, decoder_rnn_hiddens, 
             current_context_vec, attention, attention_cum)
 
@@ -394,19 +423,21 @@ class Decoder(nn.Module):
             - memory: batch x #mel_specs x mel_spec_dim
         """
         # Run greedy decoding if memory is None
-        greedy = not self.training
         if memory is not None:
             memory = self._reshape_memory(memory)
             T_decoder = memory.size(0)
+
         outputs = []
         attentions = []
         stop_tokens = []
         t = 0
         memory_input, attention_rnn_hidden, decoder_rnn_hiddens,\
             current_context_vec, attention, attention_cum = self._init_states(inputs)
+
         while True:
             if t > 0:
                 if memory is None:
+                    # Use last output as input for the next time stamp
                     new_memory = outputs[-1]
                 else:
                     new_memory = memory[t - 1]
@@ -415,9 +446,11 @@ class Decoder(nn.Module):
                     memory_input = torch.cat([memory_input[:, self.r * self.memory_dim:].clone(), new_memory], dim=-1)
                 else:
                     memory_input = new_memory
-            # Prenet
+
+            # Prenet -> gets the input to 128 dimension
             processed_memory = self.prenet(memory_input)
-            # Attention RNN
+
+            # Recurrent attention module
             attention_cat = torch.cat(
                 (attention.unsqueeze(1), attention_cum.unsqueeze(1)), dim=1)
             attention_rnn_hidden, current_context_vec, attention = self.attention_rnn(
@@ -425,41 +458,51 @@ class Decoder(nn.Module):
                 inputs, attention_cat, mask, t)
             del attention_cat
             attention_cum += attention
-            # Concat RNN output and attention context vector
+
+            # Concat AttentionRNN's hidden states and the resulted context vector
             decoder_input = self.project_to_decoder_in(
                 torch.cat((attention_rnn_hidden, current_context_vec), -1))
+
             # Pass through the decoder RNNs
             for idx in range(len(self.decoder_rnns)):
-                decoder_rnn_hiddens[idx] = self.decoder_rnns[idx](
-                    decoder_input, decoder_rnn_hiddens[idx])
+                decoder_rnn_hiddens[idx] = self.decoder_rnns[idx](decoder_input, decoder_rnn_hiddens[idx])
                 # Residual connection
                 decoder_input = decoder_rnn_hiddens[idx] + decoder_input
             decoder_output = decoder_input
             del decoder_input
-            # predict mel vectors from decoder vectors
-            output = self.proj_to_mel(decoder_output)
-            output = torch.sigmoid(output)
-            # predict stop token
+
+            # Predict mel vectors from decoder's output
+            output = torch.sigmoid(self.proj_to_mel(decoder_output))
+
+            # Concatenate the decoder's output with the mel spectograms
             stopnet_input = torch.cat([decoder_output, output], -1)
             del decoder_output
+
+            # Given the final output predict if we reach the end
             stop_token = self.stopnet(stopnet_input)
             del stopnet_input
+            
             outputs += [output]
             attentions += [attention]
             stop_tokens += [stop_token]
             del output
+
             t += 1
             if memory is not None:
+                # If we went through whole input memory tensor
                 if t >= T_decoder:
                     break
             else:
+                # If StopNet predicts the sentence ended and attention is placed on the last character
                 if t > inputs.shape[1] / 4 and (stop_token > 0.6 or
                                                 attention[:, -1].item() > 0.6):
                     break
+                # In none of the above condition is met we just check the maximum steps allowed
                 elif t > self.max_decoder_steps:
                     print("   | > Decoder stopped with 'max_decoder_steps")
                     break
-        # Back to batch first
+
+        # Change the shapes so the batch will be first again
         attentions = torch.stack(attentions).transpose(0, 1)
         outputs = torch.stack(outputs).transpose(0, 1).contiguous()
         stop_tokens = torch.stack(stop_tokens).transpose(0, 1)
@@ -476,8 +519,8 @@ class StopNet(nn.Module):
 
     def __init__(self, in_features):
         super(StopNet, self).__init__()
-        self.dropout = nn.Dropout(0.1)
         self.linear = nn.Linear(in_features, 1)
+        self.dropout = nn.Dropout(0.1)
         self.sigmoid = nn.Sigmoid()
         torch.nn.init.xavier_uniform_(
             self.linear.weight, gain=torch.nn.init.calculate_gain('linear'))

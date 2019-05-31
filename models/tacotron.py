@@ -4,6 +4,7 @@ from torch import nn
 from math import sqrt
 from layers.tacotron import Prenet, Encoder, Decoder, PostCBHG
 
+import time
 
 class Tacotron(nn.Module):
     def __init__(self,
@@ -30,16 +31,30 @@ class Tacotron(nn.Module):
             nn.Sigmoid())
 
     def forward(self, characters, mel_specs=None, mask=None):
-        B = characters.size(0)
-        inputs = self.embedding(characters)
-        # batch x time x dim
-        encoder_outputs = self.encoder(inputs)
-        # batch x time x dim*r
-        mel_outputs, alignments, stop_tokens = self.decoder(
-            encoder_outputs, mel_specs, mask)
-        # Reshape
-        # batch x time x dim
-        mel_outputs = mel_outputs.view(B, -1, self.mel_dim)
-        linear_outputs = self.postnet(mel_outputs)
-        linear_outputs = self.last_linear(linear_outputs)
-        return mel_outputs, linear_outputs, alignments, stop_tokens
+        
+        batch_size = characters.size(0)
+        
+        # Get the embeddings of our input 
+        embedded_inputs = self.embedding(characters)
+
+        # Encode the inputs
+        # Shape : batch_size x number_of_phonemes x (embedding_dimension / 2)
+        encoder_outputs = self.encoder(embedded_inputs)
+
+        # Decode the encoded data
+        # Shape : batch_size x number_of_phonemes x embedding_dimension
+        mel_outputs, alignments, stop_tokens = self.decoder(encoder_outputs, mel_specs, mask)
+
+        # Reshape the data so each representation has desired mel spectogram frame dimension
+        mel_outputs = mel_outputs.view(batch_size, -1, self.mel_dim)
+
+        # Pass data to the postnet CBHG
+        # Shape : batch_size x dim x mel spectogram frame dimension
+        postnet_output = self.postnet(mel_outputs)
+
+        # Pass data through the last linear layers
+        # Shape : batch_size x dim x embedding_dimension
+        linear_outputs = self.last_linear(postnet_output)
+        t2=0
+        # Linear output shape : batch_size x dim x linear dimension
+        return mel_outputs, linear_outputs, alignments, stop_tokens, t2

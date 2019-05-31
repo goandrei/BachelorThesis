@@ -133,32 +133,33 @@ class AttentionRNNCell(nn.Module):
                 'b' (Bahdanau) or 'ls' (Location Sensitive).".format(
                 align_model))
 
-    def forward(self, memory, context, rnn_state, annots, atten, mask, t):
+    def forward(self, memory, context, rnn_state, inputs, atten, mask, t):
         """
         Shapes:
             - memory: (batch, 1, dim) or (batch, dim)
             - context: (batch, dim)
             - rnn_state: (batch, out_dim)
-            - annots: (batch, max_time, annot_dim)
+            - inputs: (batch, max_time, input_dim)
             - atten: (batch, 2, max_time)
             - mask: (batch,)
         """
         if t == 0:
             self.alignment_model.reset()
             self.win_idx = 0
-        # Feed it to RNN
-        # s_i = f(y_{i-1}, c_{i}, s_{i-1})
+
+        # Feed the RNN
         rnn_output = self.rnn_cell(torch.cat((memory, context), -1), rnn_state)
-        # Alignment
-        # (batch, max_time)
-        # e_{ij} = a(s_{i-1}, h_j)
+
+        # Generate the alignment
         if self.align_model is 'b':
-            alignment = self.alignment_model(annots, rnn_output)
+            alignment = self.alignment_model(inputs, rnn_output) #BahdanauAttention
         else:
-            alignment = self.alignment_model(annots, rnn_output, atten)
+            alignment = self.alignment_model(inputs, rnn_output, atten) #LocationSensitiveAttention
+
         if mask is not None:
             mask = mask.view(memory.size(0), -1)
             alignment.masked_fill_(1 - mask, -float("inf"))
+
         # Windowing
         if not self.training and self.windowing:
             back_win = self.win_idx - self.win_back
@@ -169,13 +170,13 @@ class AttentionRNNCell(nn.Module):
                 alignment[:, front_win:] = -float("inf")
             # Update the window
             self.win_idx = torch.argmax(alignment,1).long()[0].item()
-        # Normalize context weight
-        # alignment = F.softmax(alignment, dim=-1)
-        # alignment = 5 * alignment
+
+        # Normalize the alignment/softmax
         alignment = torch.sigmoid(alignment) / torch.sigmoid(alignment).sum(dim=1).unsqueeze(1)
-        # Attention context vector
-        # (batch, 1, dim)
-        # c_i = \sum_{j=1}^{T_x} \alpha_{ij} h_j
-        context = torch.bmm(alignment.unsqueeze(1), annots)
+
+        # Create the context vector
+        # This applies a element-by-element matrix multiplication with the inputs
+        # In this way the important informaton in the inputs will be "highlighted"
+        context = torch.bmm(alignment.unsqueeze(1), inputs)
         context = context.squeeze(1)
         return rnn_output, context, alignment

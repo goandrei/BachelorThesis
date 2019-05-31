@@ -80,26 +80,33 @@ def global_timer():
 def module_timer():
 
     times = [0,0,0]
+    print('INTRARI SCURTE ')
     for idx, short_input in enumerate(short_inputs):
         data, t = synthesizer.tts(short_input)
         print(idx, ': ', t)
         times[0] += t
+    print()
 
+    print('INTRARI MEDII ')
     for idx, medium_input in enumerate(medium_inputs):
         data, t = synthesizer.tts(medium_input)
         print(idx, ': ', t)
         times[1] += t
+    print()
 
+    print('INTRARI LUNGI ')
     for idx, long_input in enumerate(long_inputs):
         data, t = synthesizer.tts(long_input)
         print(idx, ': ', t)
         times[2] += t
+    print()
 
-    plt.bar([0.75,1.75,2.75], height=times)
+    plt.bar([0.75,1.75,2.75], height=[x/5 for x in times])
     plt.xticks([0.75, 1.75, 2.75], ['Intrare scurta(5)', 'Intrare medie(15)', 'Intare lunga(30)'])
+    plt.ylim([0,0.06])
     plt.show()
 
 if __name__ == '__main__':
 
     #module_timer()
-    data = synthesizer.tts('hi there how are you')
+    data = synthesizer.tts('This enables even young children to easily make inferences like If I roll this pen off a table, it will fall on the floor.')

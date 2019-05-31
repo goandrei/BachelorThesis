@@ -1,5 +1,6 @@
 #!flask/bin/python
 import argparse
+import torch
 from synthesizer import Synthesizer
 from utils.generic_utils import load_config
 from flask import Flask, Response, request, render_template, send_file
@@ -9,7 +10,7 @@ parser.add_argument(
     '-c', '--config_path', type=str, help='path to config file for training')
 args = parser.parse_args()
 
-config = load_config(args.config_path)
+config = load_config('server/config.json')
 app = Flask(__name__)
 synthesizer = Synthesizer()
 synthesizer.load_model(config.model_path, config.model_name,
@@ -25,7 +26,7 @@ def index():
 def tts():
     text = request.args.get('text')
     print(" > Model input: {}".format(text))
-    data = synthesizer.tts(text)
+    data, _ = synthesizer.tts(text)
     return send_file(data, mimetype='audio/wav')
 
 
