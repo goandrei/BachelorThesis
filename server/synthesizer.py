@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import time
 
 #append the parent directory as a search path
 file_directory = os.path.dirname(__file__)
@@ -94,9 +95,9 @@ class Synthesizer(object):
         Gets an input, prepares it for the model and returns the predicted output.
 
     Parameters:
-        @text = input sentence
+        @text = input sentence 
     """
-    def tts(self, text):
+    def tts(self, text, gl_mode=None):                
 
         wavs = []
         
@@ -108,7 +109,7 @@ class Synthesizer(object):
 
             sen = sen.strip()
             sen += '.'
-            print('Input : {}'.format(sen))
+            #print('Input : {}'.format(sen)) 
 
             #character => phonem => index
             seq = np.array(self.input_adapter(sen))
@@ -116,18 +117,21 @@ class Synthesizer(object):
             #numpy to pytorch array
             chars_var = torch.from_numpy(seq).unsqueeze(0).long()
 
-            if self.use_cuda:
+            if self.use_cuda: 
                 chars_var = chars_var.cuda()
 
             #begin the inference
-            mel_out, linear_out, alignments, stop_tokens, t = self.model.forward(chars_var)
+            mel_out, linear_out, alignments, stop_tokens = self.model.forward(chars_var)
 
             #move output tensor to cpu
-            linear_out = linear_out[0].data.cpu().numpy()
-            wav = self.ap.inv_spectrogram(linear_out.T)
+            linear_out = linear_out[0].data.cpu().numpy() 
+            t = time.time()      
+            wav = self.ap.inv_spectrogram(linear_out.T, gl_mode)  
+            t = time.time() - t
             wavs += list(wav)
             wavs += [0] * 10000
 
-        out = io.BytesIO()
+        out = io.BytesIO() 
         self.save_wav(wavs, out)
+        self.save_wav(wavs, 'gla.wav')
         return out, t

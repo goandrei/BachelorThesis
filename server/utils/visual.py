@@ -1,7 +1,6 @@
 import numpy as np
 import librosa
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from utils.text import phoneme_to_sequence, sequence_to_phoneme
 

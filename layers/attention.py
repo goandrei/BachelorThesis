@@ -76,21 +76,21 @@ class LocationSensitiveAttention(nn.Module):
     def reset(self):
         self.processed_annots = None
 
-    def forward(self, annot, query, loc):
+    def forward(self, input, att_rnn_output, location):
         """
         Shapes:
             - annot: (batch, max_time, dim)
             - query: (batch, 1, dim) or (batch, dim)
             - loc: (batch, 2, max_time)
         """
-        if query.dim() == 2:
+        if att_rnn_output.dim() == 2:
             # insert time-axis for broadcasting
-            query = query.unsqueeze(1)
-        processed_loc = self.loc_linear(self.loc_conv(loc).transpose(1, 2))
-        processed_query = self.query_layer(query)
+            att_rnn_output = att_rnn_output.unsqueeze(1)
+        processed_loc = self.loc_linear(self.loc_conv(location).transpose(1, 2))
+        processed_query = self.query_layer(att_rnn_output)
         # cache annots
         if self.processed_annots is None:
-            self.processed_annots = self.annot_layer(annot)
+            self.processed_annots = self.annot_layer(input)
         alignment = self.v(
             torch.tanh(processed_query + self.processed_annots + processed_loc))
         del processed_loc
@@ -171,7 +171,7 @@ class AttentionRNNCell(nn.Module):
             # Update the window
             self.win_idx = torch.argmax(alignment,1).long()[0].item()
 
-        # Normalize the alignment/softmax
+        # Normalize the alignment
         alignment = torch.sigmoid(alignment) / torch.sigmoid(alignment).sum(dim=1).unsqueeze(1)
 
         # Create the context vector

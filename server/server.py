@@ -24,11 +24,11 @@ def index():
 
 @app.route('/api/tts', methods=['GET'])
 def tts():
-    text = request.args.get('text')
+    text = request.args.get('text')  
     print(" > Model input: {}".format(text))
-    data, _ = synthesizer.tts(text)
-    return send_file(data, mimetype='audio/wav')
-
+    data = synthesizer.tts(text)
+    return send_file(data, mimetype='audio/wav')                    
+ 
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=config.port)

@@ -5,7 +5,7 @@ import copy
 import numpy as np
 from pprint import pprint
 from scipy import signal, io
-
+from utils.visual import plot_spectrogram
 
 class AudioProcessor(object):
     def __init__(self,
@@ -131,7 +131,7 @@ class AudioProcessor(object):
             raise RuntimeError(" !! Preemphasis is applied with factor 0.0. ")
         return signal.lfilter([1, -self.preemphasis], [1], x)
 
-    def apply_inv_preemphasis(self, x):
+    def apply_inv_preemphasis(self, x): 
         if self.preemphasis == 0:
             raise RuntimeError(" !! Preemphasis is applied with factor 0.0. ")
         return signal.lfilter([1], [1, -self.preemphasis], x)
@@ -152,13 +152,24 @@ class AudioProcessor(object):
         S = self._amp_to_db(self._linear_to_mel(np.abs(D))) - self.ref_level_db
         return self._normalize(S)
 
-    def inv_spectrogram(self, spectrogram):
+    def inv_spectrogram(self, spectrogram, gl_mode=None):
         """Converts spectrogram to waveform using librosa"""
         S = self._denormalize(spectrogram)
         S = self._db_to_amp(S + self.ref_level_db)  # Convert back to linear
         # Reconstruct phase
         if self.preemphasis != 0:
-            return self.apply_inv_preemphasis(self._griffin_lim(S**self.power))
+            if gl_mode == 'admm':
+                return self.apply_inv_preemphasis(self._admm_griffin_lim(S**self.power))
+            if gl_mode == 'gla':
+                return self.apply_inv_preemphasis(self._griffin_lim(S**self.power))
+            if gl_mode == 'fgla':
+                return self.apply_inv_preemphasis(self._fast_griffin_lim(S**self.power))
+            if gl_mode == 'fgla2':
+                return self.apply_inv_preemphasis(self._fast_griffin_lim2(S**self.power))
+            if gl_mode == 'mfgla':
+                return self.apply_inv_preemphasis(self._mod_fast_griffin_lim(S**self.power))
+
+            return self.apply_inv_preemphasis(self._admm_griffin_lim(S**self.power))
         else:
             return self._griffin_lim(S**self.power)
 
@@ -173,13 +184,97 @@ class AudioProcessor(object):
             return self._griffin_lim(S**self.power)
 
     def _griffin_lim(self, S):
+        print('gla')
+        # build the initial phase array
         angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
+
+        # build some complex numbers using spectogram information as real part(magnitude) 
+        # we will firstly use a random imaginary part as phase, then update it each iteration
         S_complex = np.abs(S).astype(np.complex)
+        
+        # compute the first time-series
         y = self._istft(S_complex * angles)
         for i in range(self.griffin_lim_iters):
+            # apply STFT to get back the spectogram, then compute the angle(imaginary part)
+            # and compute the new phase
             angles = np.exp(1j * np.angle(self._stft(y)))
+            
+            # apply inverse STFT to get the time-series
             y = self._istft(S_complex * angles)
         return y
+
+    def _fast_griffin_lim(self, S):
+        print('fast')
+        # build the initial phase array
+        angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
+
+        # build some complex numbers using spectogram information as real part(magnitude) 
+        # we will firstly use a random imaginary part as phase, then update it each iteration
+        S_complex = np.abs(S).astype(np.complex)
+        alfa = 0.98
+        # compute the first time-series
+        t0 = self._stft(self._istft(S_complex * angles))
+        for i in range(self.griffin_lim_iters):
+            t1 = self._stft(self._istft(S_complex * angles))
+            angles = np.exp(1j * np.angle(t1 + alfa*(t1 - t0)))
+            t1 = t0
+
+        return self._istft(S_complex * angles)
+
+    # source: https://github.com/rbarghou/pygriffinlim
+    def _fast_griffin_lim2(self, S):
+        print('fast2')
+        _M = S
+        alpha = 0.1
+        aprox_signal = None
+        for k in range(self.griffin_lim_iters):
+            if aprox_signal is None:
+                _P = np.random.randn(*_M.shape)
+            else:
+                _D = self._stft(aprox_signal)
+                _P = np.angle(_D)
+
+            _D = _M * np.exp(1j * _P)
+            _M = S + (alpha * np.abs(_D))
+            aprox_signal = self._istft(_D)
+
+        return aprox_signal
+
+    def _mod_fast_griffin_lim(self, S):
+        print('mod_fast')
+
+        _M = S
+        aprox_signal = None
+        for k in range(self.griffin_lim_iters):
+            if aprox_signal is None:
+                _P = np.random.randn(*_M.shape)
+            else:
+                _D = self._stft(aprox_signal)
+                _P = np.angle(_D)
+
+            _D = _M * np.exp(1j * _P)
+            alpha = np.random.normal(0.1, 0.4)
+            _M = S + (alpha * np.abs(_D))
+            aprox_signal = self._istft(_D)
+
+        return aprox_signal
+
+    def mysign(self,x):
+        return np.exp(1j * np.angle(x))
+
+    def _admm_griffin_lim(self, S, rho = 0.1):
+        print('admm')
+        S = np.abs(S)
+        spec_shape = S.shape
+        z = S * np.exp(2 * np.pi * 1j * np.random.rand(spec_shape[0],spec_shape[1]))
+        u = np.zeros(spec_shape)
+
+        for i in range(self.griffin_lim_iters):
+            x = S * self.mysign(z-u)
+            v = x + u
+            z = (rho * v + self._stft(self._istft(v))) / (1 + rho)
+            u = u + x - z
+        return self._istft(x)
 
     def _stft(self, y):
         return librosa.stft(

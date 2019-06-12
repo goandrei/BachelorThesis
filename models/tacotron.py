@@ -54,7 +54,7 @@ class Tacotron(nn.Module):
 
         # Pass data through the last linear layers
         # Shape : batch_size x dim x embedding_dimension
-        linear_outputs = self.last_linear(postnet_output)
-        t2=0
+        linear_outputs = self.last_linear(postnet_output)   
+
         # Linear output shape : batch_size x dim x linear dimension
-        return mel_outputs, linear_outputs, alignments, stop_tokens, t2
+        return mel_outputs, linear_outputs, alignments, stop_tokens    

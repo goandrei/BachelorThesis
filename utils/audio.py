@@ -6,7 +6,6 @@ import numpy as np
 from pprint import pprint
 from scipy import signal, io
 
-
 class AudioProcessor(object):
     def __init__(self,
                  bits=None,
@@ -131,7 +130,7 @@ class AudioProcessor(object):
             raise RuntimeError(" !! Preemphasis is applied with factor 0.0. ")
         return signal.lfilter([1, -self.preemphasis], [1], x)
 
-    def apply_inv_preemphasis(self, x):
+    def apply_inv_preemphasis(self, x): 
         if self.preemphasis == 0:
             raise RuntimeError(" !! Preemphasis is applied with factor 0.0. ")
         return signal.lfilter([1], [1, -self.preemphasis], x)
@@ -152,13 +151,20 @@ class AudioProcessor(object):
         S = self._amp_to_db(self._linear_to_mel(np.abs(D))) - self.ref_level_db
         return self._normalize(S)
 
-    def inv_spectrogram(self, spectrogram):
+        def inv_spectrogram(self, spectrogram, gl_mode=None):
         """Converts spectrogram to waveform using librosa"""
         S = self._denormalize(spectrogram)
         S = self._db_to_amp(S + self.ref_level_db)  # Convert back to linear
         # Reconstruct phase
         if self.preemphasis != 0:
-            return self.apply_inv_preemphasis(self._griffin_lim(S**self.power))
+            if gl_mode is None:
+                return self.apply_inv_preemphasis(self._griffin_lim(S**self.power))
+            if gl_mode == 'fgla':
+                return self.apply_inv_preemphasis(self._fast_griffin_lim(S**self.power))
+            if gl_mode == 'fgla2':
+                return self.apply_inv_preemphasis(self._fast_griffin_lim2(S**self.power))
+            if gl_mode == 'mfgla':
+                return self.apply_inv_preemphasis(self._mod_fast_griffin_lim(S**self.power))
         else:
             return self._griffin_lim(S**self.power)
 
@@ -179,6 +185,24 @@ class AudioProcessor(object):
         for i in range(self.griffin_lim_iters):
             angles = np.exp(1j * np.angle(self._stft(y)))
             y = self._istft(S_complex * angles)
+        return y
+
+    def _fast_griffin_lim(self, S):
+
+        # build the initial phase array
+        angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
+
+        # build some complex numbers using spectogram information as real part(magnitude) 
+        # we will firstly use a random imaginary part as phase, then update it each iteration
+        S_complex = np.abs(S).astype(np.complex)
+        
+        # compute the first time-series
+        t0 = self._stft(self._istft(S_complex * angles))
+        alfa = 0.98
+        for i in range(self.griffin_lim_iters):
+            t1 = self._stft(self._istft(S_complex * angles))
+            angles = np.exp(1j * np.angle(t1 + alfa*(t1 - t0)))
+            t1 = t0
         return y
 
     def _stft(self, y):

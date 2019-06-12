@@ -1,7 +1,7 @@
 from synthesizer import Synthesizer
 from utils.generic_utils import load_config
-import time
 import matplotlib.pyplot as plt
+import time
 
 import os
 os.chdir('/home/andrei/BachelorThesis/server')
@@ -101,12 +101,76 @@ def module_timer():
         times[2] += t
     print()
 
-    plt.bar([0.75,1.75,2.75], height=[x/5 for x in times])
+    plt.bar([0.75,1.75,2.75], height=[x/5 for x in times]) 
     plt.xticks([0.75, 1.75, 2.75], ['Intrare scurta(5)', 'Intrare medie(15)', 'Intare lunga(30)'])
-    plt.ylim([0,0.06])
+    plt.ylim([0,1.2])
+    plt.show()
+
+def griffin_lim_timer():
+
+    gla_nos = {0 : 'gla', 1 : 'fgla', 2 : 'fgla2', 3 : 'mfgla', 4 : 'admm'}
+    gl_len = 5
+
+    times = list()
+    [times.append(list()) for k in range(gl_len)]
+
+    print('INTRARI SCURTE ')
+    for idx, short_input in enumerate(short_inputs):
+        print('Input scurt {}'.format(idx))
+        for k in range(gl_len):
+            data, t = synthesizer.tts(short_input, gla_nos[k])
+            print('Timp {} : {}'.format(k, t))
+            times[k].append(t)
+        print()
+
+    print('INTRARI MEDII ')
+    for idx, medium_input in enumerate(medium_inputs):
+        print('Input mediu {}'.format(idx))
+        for k in range(gl_len):
+            data, t = synthesizer.tts(short_input, gla_nos[k])
+            print('Timp {} : {}'.format(k, t))
+            times[k].append(t)
+        print()
+
+    print('INTRARI LUNGI ')
+    for idx, long_input in enumerate(long_inputs):
+        print('Input lung {}'.format(idx))
+        for k in range(gl_len):
+            data, t = synthesizer.tts(short_input, gla_nos[k])
+            print('Timp {} : {}'.format(k, t))
+            times[k].append(t)
+        print()
+
+    plt.plot(range(15), times[0], 'r', label='GLA')
+    plt.plot(range(15), times[1], 'g', label='FGLA')
+    plt.plot(range(15), times[2], 'b', label='FGLA2')
+    plt.plot(range(15), times[3], 'y', label='MFGLA')
+    plt.plot(range(15), times[4], 'm', label='ADMM')
+    plt.legend(loc='upper left')
+    plt.show()
+
+def grafic_vocoder():
+
+    time_list = list()
+    index_list = list()
+    for i in range(5,100):
+        t = time.time()
+        data = synthesizer.tts('this is a test and you should not be worried about the results', i)
+        time_list.append(time.time() - t)
+        index_list.append(i)
+
+    plt.plot(index_list, time_list, '-bo')
+    plt.xlabel('Numar iteratii Griffin-Lim')
+    plt.ylabel('Timp')
     plt.show()
 
 if __name__ == '__main__':
 
+    griffin_lim_timer()
     #module_timer()
-    data = synthesizer.tts('This enables even young children to easily make inferences like If I roll this pen off a table, it will fall on the floor.')
+    #data = synthesizer.tts('this is a test and you should not be worried about the results')
+
+
+
+
+    
