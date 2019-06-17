@@ -111,13 +111,10 @@
           <div class='audio-container'>
             <audio id="audio" controls autoplay hidden download></audio>
           </div>
-        
-          <!-- Infos header-->
-          <h1 align="center" id="info_head" hidden>Informatii rezultat</h1>
           <br><br>
 
           <!-- Time info -->
-          <label id="time_label" hidden>Timp de rulare:</label>
+          <label id="time_label" hidden>Timp de rulare(s):</label>
           <input id="time_info" type="text" width="10px" readonly hidden>
 
           <!-- Error message if needed-->
@@ -130,54 +127,78 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"></script>
     <script>
-            function updateRangeInput(elem, target) {
-              document.getElementById(target).value = elem.value
-            }
+      
+      //start time and end time
+      var t1 = 0
+      var t2 = 0
 
-            function q(selector) {return document.querySelector(selector)}
-            q('#text').focus()
-            q('#speak-button').addEventListener('click', function(e) {
-                text  = q('#text').value
-                gl    = q('#gl_select').value
-                shift = q('#range_in').value 
-                iter  = q('#iteratii_in').value
-                var date = new Date()
-                if (text) {
-                    q('#speak-button').disabled = true
-                    q('#audio').hidden = true
-                    q('#loader').hidden = false
-                    q('#message').hidden = true
-                    q('#info_head').hidden = true
-                    q('#time_info').hidden = true
-                    q('#time_label').hidden = true
-                    start_time = performance.now()
-                    synthesize(text, gl, shift, iter)
-                    end_time = performance.now()
-                    q('#time_info').value = end_time - start_time
-                }
-                e.preventDefault()
-                return false
+      //update range input when sliding range 
+      function updateRangeInput(elem, target) {
+        document.getElementById(target).value = elem.value
+      }
+      
+      function q(selector) {
+        return document.querySelector(selector)
+      }
+      
+      function hideInfo(){
+        q('#message').hidden = true
+        q('#time_info').hidden = true
+        q('#time_label').hidden = true
+        q('#audio').hidden = true
+        q('#speak-button').disabled = true
+      }
+
+      function showInfo(){
+        q('#audio').hidden = false
+        q('#time_info').hidden = false
+        q('#time_label').hidden = false
+        q('#speak-button').disabled = false
+      }
+
+      q('#text').focus()
+
+      //when 'Go' button is clicked
+      q('#speak-button').addEventListener('click', function(e) {
+
+          //fetch inserted values
+          text  = q('#text').value
+          gl    = q('#gl_select').value
+          shift = q('#range_in').value 
+          iter  = q('#iteratii_in').value
+          if (text) {
+              q('#loader').hidden = false
+              hideInfo()
+
+              t1 = performance.now()
+              synthesize(text, gl, shift, iter)                    
+          }
+          e.preventDefault()
+          return false
+      })
+
+      function synthesize(text, gl, shift, iter) {
+        fetch('/api/tts?text=' + encodeURIComponent(text) + '&gl=' + encodeURIComponent(gl) + '&shift=' + encodeURIComponent(shift) + '&iter=' + encodeURIComponent(iter), {cache: 'no-cache'})
+          .then(function(res) {
+            if (!res.ok) throw Error(res.statusText)
+                return res.blob()
+            }).then(function(blob) {
+              
+              //fetch audio result
+              q('#audio').src = URL.createObjectURL(blob)
+              q('#loader').hidden = true
+              showInfo()
+
+              t2 = performance.now()
+              //show processing time
+              q('#time_info').value = (t2 - t1) / 1000
+            }).catch(function(err) {
+              q('#message').hidden = false
+              q('#message').textContent = 'Error: ' + err.message
+              q('#speak-button').disabled = false
+              q('#loader').hidden = true
             })
-            function synthesize(text, gl, shift, iter) {
-                fetch('/api/tts?text=' + encodeURIComponent(text) + '&gl=' + encodeURIComponent(gl) + '&shift=' + encodeURIComponent(shift) + '&iter=' + encodeURIComponent(iter), {cache: 'no-cache'})
-                    .then(function(res) {
-                        if (!res.ok) throw Error(res.statusText)
-                            return res.blob()
-                        }).then(function(blob) {
-                            q('#speak-button').disabled = false
-                            q('#audio').src = URL.createObjectURL(blob)
-                            q('#audio').hidden = false
-                            q('#loader').hidden = true
-                            q('#info_head').hidden = false
-                            q('#time_info').hidden = false
-                            q('#time_label').hidden = false
-                        }).catch(function(err) {
-                            q('#message').hidden = false
-                            q('#message').textContent = 'Error: ' + err.message
-                            q('#speak-button').disabled = false
-                            q('#loader').hidden = true
-                        })
-            }
+      }
         </script>
 
   </body>
