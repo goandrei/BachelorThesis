@@ -75,6 +75,7 @@ def global_timer():
 
     plt.bar([1,2,3], height=times)
     plt.xticks([1, 2, 3], ['Intrare scurta(5)', 'Intrare medie(15)', 'Intare lunga(30)'])
+    plt.ylim([0, 10])
     plt.show()
 
 def module_timer():
@@ -166,9 +167,9 @@ def grafic_vocoder():
 
 if __name__ == '__main__':
 
-    griffin_lim_timer()
-    #module_timer()
-    #data = synthesizer.tts('this is a test and you should not be worried about the results')
+    #griffin_lim_timer()
+    #global_timer()
+    data = synthesizer.tts('this is a test and you should not be worried about the results')
 
 
 

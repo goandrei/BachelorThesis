@@ -26,6 +26,7 @@ class AudioProcessor(object):
                  clip_norm=True,
                  griffin_lim_iters=None,
                  do_trim_silence=False,
+                 griffin_lim_algorithm=None,
                  **kwargs):
 
         print(" > Setting up Audio Processor...")
@@ -48,7 +49,7 @@ class AudioProcessor(object):
         self.max_norm = 1.0 if max_norm is None else float(max_norm)
         self.clip_norm = clip_norm
         self.do_trim_silence = do_trim_silence
-        self.n_fft, self.hop_length, self.win_length = self._stft_parameters()
+        self._stft_parameters()
         members = vars(self)
         for key, value in members.items():
             print(" | > {}:{}".format(key, value))
@@ -111,12 +112,11 @@ class AudioProcessor(object):
         else:
             return S
 
-    def _stft_parameters(self, ):
+    def _stft_parameters(selfc):
         """Compute necessary stft parameters with given time values"""
-        n_fft = (self.num_freq - 1) * 2
-        hop_length = int(self.frame_shift_ms / 1000.0 * self.sample_rate)
-        win_length = int(self.frame_length_ms / 1000.0 * self.sample_rate)
-        return n_fft, hop_length, win_length
+        self.n_fft = (self.num_freq - 1) * 2
+        self.hop_length = int(self.frame_shift_ms / 1000.0 * self.sample_rate)
+        self.win_length = int(self.frame_length_ms / 1000.0 * self.sample_rate)
 
     def _amp_to_db(self, x):
         min_level = np.exp(self.min_level_db / 20 * np.log(10))
@@ -206,6 +206,7 @@ class AudioProcessor(object):
         return y
 
     def _stft(self, y):
+        print(self.hop_length)
         return librosa.stft(
             y=y,
             n_fft=self.n_fft,

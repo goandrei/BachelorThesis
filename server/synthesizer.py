@@ -126,7 +126,7 @@ class Synthesizer(object):
             #move output tensor to cpu
             linear_out = linear_out[0].data.cpu().numpy() 
             t = time.time()      
-            wav = self.ap.inv_spectrogram(linear_out.T, gl_mode)  
+            wav = self.ap.inv_spectrogram(linear_out.T, gl_mode)   
             t = time.time() - t
             wavs += list(wav)
             wavs += [0] * 10000
@@ -134,4 +134,4 @@ class Synthesizer(object):
         out = io.BytesIO() 
         self.save_wav(wavs, out)
         self.save_wav(wavs, 'gla.wav')
-        return out, t
+        return out   

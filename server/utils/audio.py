@@ -27,6 +27,7 @@ class AudioProcessor(object):
                  clip_norm=True,
                  griffin_lim_iters=None,
                  do_trim_silence=False,
+                 griffin_lim_algorithm=None,
                  **kwargs):
 
         print(" > Setting up Audio Processor...")
@@ -49,7 +50,9 @@ class AudioProcessor(object):
         self.max_norm = 1.0 if max_norm is None else float(max_norm)
         self.clip_norm = clip_norm
         self.do_trim_silence = do_trim_silence
-        self.n_fft, self.hop_length, self.win_length = self._stft_parameters()
+        self.griffin_lim_algorithm = griffin_lim_algorithm
+        self.set_gl_algorithm()
+        self._stft_parameters()
         members = vars(self)
         for key, value in members.items():
             print(" | > {}:{}".format(key, value))
@@ -112,12 +115,11 @@ class AudioProcessor(object):
         else:
             return S
 
-    def _stft_parameters(self, ):
+    def _stft_parameters(self):
         """Compute necessary stft parameters with given time values"""
-        n_fft = (self.num_freq - 1) * 2
-        hop_length = int(self.frame_shift_ms / 1000.0 * self.sample_rate)
-        win_length = int(self.frame_length_ms / 1000.0 * self.sample_rate)
-        return n_fft, hop_length, win_length
+        self.n_fft = (self.num_freq - 1) * 2
+        self.hop_length = int(self.frame_shift_ms / 1000.0 * self.sample_rate)
+        self.win_length = int(self.frame_length_ms / 1000.0 * self.sample_rate)
 
     def _amp_to_db(self, x):
         min_level = np.exp(self.min_level_db / 20 * np.log(10))
@@ -156,22 +158,12 @@ class AudioProcessor(object):
         """Converts spectrogram to waveform using librosa"""
         S = self._denormalize(spectrogram)
         S = self._db_to_amp(S + self.ref_level_db)  # Convert back to linear
+
         # Reconstruct phase
         if self.preemphasis != 0:
-            if gl_mode == 'admm':
-                return self.apply_inv_preemphasis(self._admm_griffin_lim(S**self.power))
-            if gl_mode == 'gla':
-                return self.apply_inv_preemphasis(self._griffin_lim(S**self.power))
-            if gl_mode == 'fgla':
-                return self.apply_inv_preemphasis(self._fast_griffin_lim(S**self.power))
-            if gl_mode == 'fgla2':
-                return self.apply_inv_preemphasis(self._fast_griffin_lim2(S**self.power))
-            if gl_mode == 'mfgla':
-                return self.apply_inv_preemphasis(self._mod_fast_griffin_lim(S**self.power))
-
-            return self.apply_inv_preemphasis(self._admm_griffin_lim(S**self.power))
+            return self.apply_inv_preemphasis(self.griffin_lim_caller(S**self.power))
         else:
-            return self._griffin_lim(S**self.power)
+            return self.griffin_lim_caller(S**self.power)
 
     def inv_mel_spectrogram(self, mel_spectrogram):
         '''Converts mel spectrogram to waveform using librosa'''
@@ -183,7 +175,7 @@ class AudioProcessor(object):
         else:
             return self._griffin_lim(S**self.power)
 
-    def _griffin_lim(self, S):
+    def gla(self, S):
         print('gla')
         # build the initial phase array
         angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
@@ -203,7 +195,7 @@ class AudioProcessor(object):
             y = self._istft(S_complex * angles)
         return y
 
-    def _fast_griffin_lim(self, S):
+    def fgla(self, S):
         print('fast')
         # build the initial phase array
         angles = np.exp(2j * np.pi * np.random.rand(*S.shape))
@@ -222,7 +214,7 @@ class AudioProcessor(object):
         return self._istft(S_complex * angles)
 
     # source: https://github.com/rbarghou/pygriffinlim
-    def _fast_griffin_lim2(self, S):
+    def fgla2(self, S):
         print('fast2')
         _M = S
         alpha = 0.1
@@ -240,7 +232,7 @@ class AudioProcessor(object):
 
         return aprox_signal
 
-    def _mod_fast_griffin_lim(self, S):
+    def mfgla(self, S):
         print('mod_fast')
 
         _M = S
@@ -262,7 +254,7 @@ class AudioProcessor(object):
     def mysign(self,x):
         return np.exp(1j * np.angle(x))
 
-    def _admm_griffin_lim(self, S, rho = 0.1):
+    def admm(self, S, rho = 0.1):
         print('admm')
         S = np.abs(S)
         spec_shape = S.shape
@@ -304,25 +296,15 @@ class AudioProcessor(object):
         return librosa.effects.trim(
             wav, top_db=40, frame_length=1024, hop_length=256)[0]
 
-    # WaveRNN repo specific functions
-    # def mulaw_encode(self, wav, qc):
-    #     mu = qc - 1
-    #     wav_abs = np.minimum(np.abs(wav), 1.0)
-    #     magnitude = np.log(1 + mu * wav_abs) / np.log(1. + mu)
-    #     signal = np.sign(wav) * magnitude
-    #     # Quantize signal to the specified number of levels.
-    #     signal = (signal + 1) / 2 * mu + 0.5
-    #     return signal.astype(np.int32)
-
-    # def mulaw_decode(self, wav, qc):
-    #     """Recovers waveform from quantized values."""
-    #     mu = qc - 1
-    #     # Map values back to [-1, 1].
-    #     casted = wav.astype(np.float32)
-    #     signal = 2 * (casted / mu) - 1
-    #     # Perform inverse of mu-law transformation.
-    #     magnitude = (1 / mu) * ((1 + mu) ** abs(signal) - 1)
-    #     return np.sign(signal) * magnitude
+    def set_gl_algorithm(self):
+        # Get the gl algorithm
+        print('def')
+        try:
+            print(self.griffin_lim_algorithm)
+            self.griffin_lim_caller = getattr(self, self.griffin_lim_algorithm.lower())
+            print(self.griffin_lim_caller)
+        except AttributeError:
+            print('Missing Griffin-Lim function')
 
     def load_wav(self, filename, encode=False):
         x, sr = librosa.load(filename, sr=self.sample_rate)

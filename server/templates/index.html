@@ -8,62 +8,120 @@
     <meta name="description" content="">
     <meta name="author" content="">
 
-    <title>Mozillia - Text2Speech engine</title>
+    <title>Text2Speech - Licenta</title>
 
-    <!-- Bootstrap core CSS -->
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css" 
-     integrity="sha384-WskhaSGFgHYWDcbwN70/dfYBj47jz9qbsMId/iRN3ewGhXQFZCSftd1LZCfmhktB" crossorigin="anonymous" rel="stylesheet">
-
-    <!-- Custom styles for this template -->
     <style>
-      body {
-        padding-top: 54px;
-      }
-      @media (min-width: 992px) {
-        body {
-          padding-top: 56px;
-        }
+      .content {
+        max-width: 550px;
+        margin: auto;
       }
 
+      .audio-container{
+        display: flex;
+        justify-content: center;
+        align-items: center
+      }
+
+      .loader {
+        border-left: 16px solid #f3f3f3; /* Light grey */
+        border-top: 8px solid blue;
+        border-right: 16px solid green;
+        border-bottom: 8px solid red;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 2s linear infinite;
+        max-width: 500px;
+        margin: auto;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .input { 
+        padding: 8px; 
+        border: 1px solid #ddd; 
+        color: #555; 
+        display: inline-block; 
+      }
+      .input[type=text] { 
+        width: 100px; 
+      }
+      .input[type=range] { 
+        width: 200px; 
+      }
     </style>
+
   </head>
   
   <body>
-    <a href="https://github.com/mozilla/TTS"><img style="position: absolute; z-index:1000; top: 0; left: 0; border: 0;" src="https://s3.amazonaws.com/github/ribbons/forkme_left_darkblue_121621.png" alt="Fork me on GitHub"></a>
-
-    <!-- Navigation -->
-    <!--
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <div class="container">
-        <a class="navbar-brand" href="#">Mozilla TTS</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarResponsive">
-          <ul class="navbar-nav ml-auto">
-            <li class="nav-item active">
-              <a class="nav-link" href="#">Home
-                <span class="sr-only">(current)</span>
-              </a>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </nav>
-    -->
 
     <!-- Page Content -->
-    <div class="container">
+    <div class="content">
       <div class="row">
         <div class="col-lg-12 text-center">
-          <h1 class="mt-5">Mozilla TTS</h1>
-          <p class="lead">"work-in-progress"</p>
-          <ul class="list-unstyled">
-          </ul>
-          <input id="text" placeholder="Enter text" size=45 type="text" name="text"> 
-          <button id="speak-button" name="speak">Speak</button><br/><br/>
-          <audio id="audio" controls autoplay hidden></audio>
-          <p id="message"></p>
+          <h1 align="center">Sintetizarea textului folosind Inteligenta Artificiala</h1>
+          <br> <br> <br>
+
+          <!-- Input box -->
+          <input id="text" placeholder="Introduceti textul" size=45 type="text" name="text"> 
+
+          <!-- Button -->
+          <button id="speak-button" name="speak">Go!</button>
+          <br/><br/>
+
+          <!-- Griffin-Lim method dropdown -->
+          <select id="gl_select">
+            <option value="gla">Griffin-Lim</option>
+            <option value="fgla">Fast Griffin-Lim</option>
+            <option value="fgla2" selected>Fast Griffin-Lim 2</option>
+            <option value="mfgla">Modified Fast Griffin-Lim</option>
+            <option value="admm">Griffin-Lim with Alternating Direction Method of Multipliers</option>
+          </select>
+          <br> <br>
+ 
+          <!-- Frame shift slider -->
+          <div>
+            <div>
+              Dimensiune shiftare(ms):
+              <input id="range_in" type="text" value="9" class="input" readonly>
+            </div>
+            <input id="range_val" type="range" min="1" max="50" oninput="updateRangeInput(this, 'range_in')" value="9" class="input">
+          </div>
+
+          <br> <br>
+
+          <!-- Iteration slider -->
+          <div>
+            <div>
+              Numar iteratii:
+              <input id="iteratii_in" type="text" value="5" class="input" readonly>
+            </div>
+            <input id="iteratii_range" type="range" min="1" max="60" oninput="updateRangeInput(this, 'iteratii_in')" value="5" class="input">
+          </div>
+
+          <br> <br>
+
+          <!-- Loader -->
+          <div id="loader" class="loader" hidden></div> 
+
+          <!-- Audio containter -->
+          <div class='audio-container'>
+            <audio id="audio" controls autoplay hidden download></audio>
+          </div>
+        
+          <!-- Infos header-->
+          <h1 align="center" id="info_head" hidden>Informatii rezultat</h1>
+          <br><br>
+
+          <!-- Time info -->
+          <label id="time_label" hidden>Timp de rulare:</label>
+          <input id="time_info" type="text" width="10px" readonly hidden>
+
+          <!-- Error message if needed-->
+          <p id="message" align="center"></p>
         </div>
       </div>
     </div>
@@ -72,32 +130,52 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"></script>
     <script>
+            function updateRangeInput(elem, target) {
+              document.getElementById(target).value = elem.value
+            }
+
             function q(selector) {return document.querySelector(selector)}
             q('#text').focus()
             q('#speak-button').addEventListener('click', function(e) {
-                text = q('#text').value
+                text  = q('#text').value
+                gl    = q('#gl_select').value
+                shift = q('#range_in').value 
+                iter  = q('#iteratii_in').value
+                var date = new Date()
                 if (text) {
-                    q('#message').textContent = 'Synthesizing...'
                     q('#speak-button').disabled = true
                     q('#audio').hidden = true
-                    synthesize(text)
+                    q('#loader').hidden = false
+                    q('#message').hidden = true
+                    q('#info_head').hidden = true
+                    q('#time_info').hidden = true
+                    q('#time_label').hidden = true
+                    start_time = performance.now()
+                    synthesize(text, gl, shift, iter)
+                    end_time = performance.now()
+                    q('#time_info').value = end_time - start_time
                 }
                 e.preventDefault()
                 return false
             })
-            function synthesize(text) {
-                fetch('/api/tts?text=' + encodeURIComponent(text), {cache: 'no-cache'})
+            function synthesize(text, gl, shift, iter) {
+                fetch('/api/tts?text=' + encodeURIComponent(text) + '&gl=' + encodeURIComponent(gl) + '&shift=' + encodeURIComponent(shift) + '&iter=' + encodeURIComponent(iter), {cache: 'no-cache'})
                     .then(function(res) {
                         if (!res.ok) throw Error(res.statusText)
                             return res.blob()
                         }).then(function(blob) {
-                            q('#message').textContent = ''
                             q('#speak-button').disabled = false
                             q('#audio').src = URL.createObjectURL(blob)
                             q('#audio').hidden = false
+                            q('#loader').hidden = true
+                            q('#info_head').hidden = false
+                            q('#time_info').hidden = false
+                            q('#time_label').hidden = false
                         }).catch(function(err) {
+                            q('#message').hidden = false
                             q('#message').textContent = 'Error: ' + err.message
                             q('#speak-button').disabled = false
+                            q('#loader').hidden = true
                         })
             }
         </script>

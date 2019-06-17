@@ -25,6 +25,12 @@ def index():
 @app.route('/api/tts', methods=['GET'])
 def tts():
     text = request.args.get('text')  
+    synthesizer.ap.frame_shift_ms        = int(request.args.get('shift'))
+    synthesizer.ap.griffin_lim_iters     = int(request.args.get('iter'))
+    synthesizer.ap.griffin_lim_algorithm = request.args.get('gl')
+    synthesizer.ap._stft_parameters()   
+    synthesizer.ap.set_gl_algorithm()
+
     print(" > Model input: {}".format(text))
     data = synthesizer.tts(text)
     return send_file(data, mimetype='audio/wav')                    
